@@ -72,6 +72,21 @@ npm run package:win
 
 Artifacts are written to `release/`. macOS builds use a DMG target; Windows builds include NSIS installer and portable EXE targets. The v0.1 packages are intentionally unsigned. For the most reliable native package, run each packaging command on its target operating system.
 
+### GitHub Actions beta builds
+
+Pushing a version tag that matches `v*.*.*` (for example, `v0.1.1`) starts the **Build beta artifacts** workflow. It builds on both `macos-latest` and `windows-latest`. You can also run it manually from **Actions → Build beta artifacts → Run workflow**.
+
+After both jobs finish, open the workflow run in GitHub and download `yPrompter-macOS-<tag>` and `yPrompter-Windows-<tag>` from its **Artifacts** section. GitHub downloads each workflow artifact as a ZIP. The macOS ZIP contains the DMG, and the Windows ZIP contains the NSIS installer and portable EXE. Workflow artifacts are retained for 30 days.
+
+To publish the files with a GitHub Release:
+
+1. Download and unzip both workflow artifacts.
+2. Open the repository's **Releases** page and create a new release for the same tag, or edit an existing release for that tag.
+3. Drag the DMG and both Windows EXE files into the release's binary attachment area.
+4. Mark the release as a pre-release while yPrompter remains in beta, then publish it.
+
+These CI packages are unsigned beta builds and are not notarized. macOS Gatekeeper may block or warn about the DMG, and Windows SmartScreen may warn about either EXE.
+
 ## Known limitations
 
 - yPrompter must remain running in the tray.
