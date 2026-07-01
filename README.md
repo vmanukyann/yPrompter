@@ -2,7 +2,7 @@
 
 **Schedule agent prompts for later.**
 
-yPrompter is a tiny macOS menu-bar and Windows system-tray app. Choose a local repository, write a prompt, and run it with the local Codex CLI now or at one future time.
+yPrompter is a macOS menu-bar and Windows system-tray app. Queue up to six local Codex jobs, attach reference images, and run each prompt now or at a future time.
 
 > **Early beta:** macOS may warn because the app is not notarized. Windows SmartScreen may warn because the app is unsigned.
 
@@ -30,16 +30,26 @@ npm run dev
 
 Vite starts the React UI and Electron opens yPrompter. Closing the window hides it; use the tray/menu-bar icon to reopen it. Choose **Quit** in the tray menu to stop the app.
 
-## Schedule a prompt
+## Queue and schedule jobs
 
-1. Choose a repository folder.
-2. Enter the prompt.
-3. Choose a future local date and time.
-4. Select Plan, Goal, or Execute mode.
-5. Choose a sandbox and approval policy.
-6. Click **Schedule**.
+1. Add or select a queued job.
+2. Choose a repository folder and enter the prompt.
+3. Optionally add up to five PNG, JPG/JPEG, or WebP images.
+4. Choose a future local date and time.
+5. Select Plan, Goal, or Execute mode.
+6. Choose a sandbox and approval policy.
+7. Click **Schedule Run**.
 
-Only one run can be scheduled at a time. Scheduling another replaces the current run. Scheduled runs default to `workspace-write` and `never` approval.
+The queue holds up to six jobs. Only one Codex process runs at a time; scheduled jobs that become due while another job is running wait for it to finish.
+
+## Local image attachments
+
+Selected images are validated (20 MB maximum per file) and copied into:
+
+- macOS: `~/Library/Application Support/yPrompter/jobs/<jobId>/attachments`
+- Windows: `%APPDATA%\yPrompter\jobs\<jobId>\attachments`
+
+Removing an image or clearing a job's images removes the local copies. yPrompter never uploads attachments itself. At execution time, existing copies are passed to supported Codex CLIs with `codex exec --image`. Older Codex versions are blocked with an update message.
 
 ## Logs and local settings
 
@@ -48,7 +58,7 @@ Each run captures Codex stdout and stderr in a timestamped file. Use **Open Last
 - macOS: `~/Library/Application Support/yPrompter/runs/logs`
 - Windows: `%APPDATA%\yPrompter\runs\logs`
 
-Settings and the pending schedule are stored in `settings.json` in the same yPrompter app-data directory. A future scheduled run is restored after an app restart.
+Queued jobs and schedules are stored in `settings.json` in the same yPrompter app-data directory. Future scheduled jobs are restored after an app restart.
 
 ## Build releases
 
@@ -96,6 +106,6 @@ These CI packages are unsigned beta builds and are not notarized. macOS Gatekeep
 - yPrompter must remain running in the tray.
 - The computer must remain awake at the scheduled time.
 - v0.1 does not use macOS `launchd` or Windows Task Scheduler.
-- Only one future run is supported.
+- Up to six jobs and five images per job are supported.
 - Unsigned beta packages may trigger operating-system security warnings.
 - yPrompter does not push to GitHub itself. Codex should only push when the prompt explicitly asks it to.

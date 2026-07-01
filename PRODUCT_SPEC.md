@@ -2,7 +2,7 @@
 
 ## One-line pitch
 
-yPrompter schedules agent prompts for later.
+yPrompter queues agent prompts for now or later.
 
 ## Main use case
 
@@ -14,17 +14,26 @@ Use the local Codex CLI. Do not call private OpenAI APIs. Do not ask for OpenAI 
 
 Execution command pattern:
 
-codex exec --cd "<repo>" --sandbox "<sandbox>" --ask-for-approval "<approval>" "<prompt>"
+codex --cd "<repo>" --sandbox "<sandbox>" --ask-for-approval "<approval>" exec [--image "<local-copy>"]... "<prompt>"
 
-## v0.1 Platform
+## v0.3 Platform
 
 - macOS menu bar
 - Windows system tray
 - Electron app
 
-## v0.1 Constraint
+## v0.3 Constraint
 
 The app must remain running and the computer must be awake at the scheduled time.
+
+## Queue and image attachments
+
+- Keep up to six jobs in the local queue.
+- Each job may contain up to five PNG, JPG/JPEG, or WebP images.
+- Imported images are validated and copied to the yPrompter app-data directory.
+- Execution never depends on the original selected file.
+- Image paths are passed to supported Codex CLIs with the repeatable `--image` flag.
+- yPrompter does not upload attachments itself.
 
 ## Modes
 
@@ -41,5 +50,5 @@ Implement the requested change. Modify files as needed. Run relevant checks. Sum
 
 - Default sandbox: workspace-write
 - Default scheduled approval mode: never
-- Do not include full-access / yolo / dangerous bypass options in v0.1
+- Do not include full-access / yolo / dangerous bypass options in v0.3
 - Do not push to GitHub unless the user prompt explicitly says to push

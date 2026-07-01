@@ -1,7 +1,7 @@
 {
   "name": "yprompter",
-  "version": "0.1.2",
-  "description": "Schedule agent prompts for later.",
+  "version": "0.3.0",
+  "description": "Queue Codex prompts with local image attachments.",
   "main": "electron/main.cjs",
   "author": "yPrompter",
   "license": "MIT",
