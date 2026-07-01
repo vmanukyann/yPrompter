@@ -53,11 +53,34 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 button:disabled { cursor: not-allowed; opacity: .42; }
 button.accent { background: #f59e0b; color: #1c1302; }
 button.secondary { background: #232c3c; color: #d8dee9; }
+button.danger { background: #7f1d2d; color: #ffe4e6; }
 button.quiet { background: transparent; color: #f6b83f; padding: 6px 8px; }
 
 aside { color: #d8b46b; background: #2b2110; border: 1px solid #59451d; border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.4; }
+aside strong { display: block; color: #f6c865; margin-top: 5px; }
 .error { margin-top: 12px; color: #fecaca; background: #3b1519; border: 1px solid #6d242b; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.run-status { background: #101725; border: 1px solid #263043; border-radius: 9px; margin: 10px 0; padding: 11px; }
+.run-status-running { border-color: #7c5a13; }
+.run-status-succeeded { border-color: #176b38; }
+.run-status-failed { border-color: #7b2732; }
+.run-status-heading { display: flex; justify-content: space-between; gap: 12px; color: #e5e7eb; font-size: 13px; }
+.run-status-running .run-status-heading strong { color: #fbbf24; }
+.run-status-succeeded .run-status-heading strong { color: #4ade80; }
+.run-status-failed .run-status-heading strong { color: #fb7185; }
+.run-status p { color: #8f9bad; font-size: 11px; line-height: 1.4; margin: 7px 0; }
+.run-status code { color: #cbd5e1; }
+.run-status dl { display: grid; gap: 4px; margin: 8px 0 0; }
+.run-status dl div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; font-size: 11px; }
+.run-status dt { color: #7f899b; }
+.run-status dd { color: #cbd5e1; margin: 0; overflow-wrap: anywhere; }
+.live-log-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.live-log-actions button { padding: 7px 10px; font-size: 11px; }
+.log-preview {
+  max-height: 150px; overflow: auto; margin: 8px 0 0; padding: 9px; border-radius: 7px;
+  background: #080c13; color: #bdc7d7; font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
 footer { border-top: 1px solid #263043; padding-top: 10px; display: grid; gap: 7px; }
 footer div { display: flex; justify-content: space-between; gap: 20px; font-size: 12px; }
 footer span { color: #7f899b; }

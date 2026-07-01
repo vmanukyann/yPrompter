@@ -22,10 +22,19 @@ function displayTime(iso) {
   return iso ? new Date(iso).toLocaleString() : "None";
 }
 
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
 function App() {
   const [appState, setAppState] = useState(null);
   const [form, setForm] = useState(blankForm);
   const [error, setError] = useState("");
+  const [logPreview, setLogPreview] = useState("");
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     window.yPrompter.getState().then((next) => {
@@ -40,6 +49,17 @@ function App() {
     const timer = setTimeout(() => window.yPrompter.saveSettings(request()), 300);
     return () => clearTimeout(timer);
   }, [form, appState]);
+
+  useEffect(() => {
+    if (!appState?.running) return;
+    const refresh = () => {
+      setNow(Date.now());
+      window.yPrompter.getLogPreview().then((preview) => setLogPreview(preview.content)).catch(() => {});
+    };
+    refresh();
+    const timer = setInterval(refresh, 1000);
+    return () => clearInterval(timer);
+  }, [appState?.running, appState?.lastRun?.logPath]);
 
   const update = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
   const request = () => ({ ...form, runAt: form.runAt ? new Date(form.runAt).toISOString() : "" });
@@ -59,6 +79,10 @@ function App() {
   }
 
   if (!appState) return <main className="loading">Opening yPrompter…</main>;
+  const run = appState.lastRun;
+  const elapsedMs = appState.running
+    ? now - new Date(run.startedAt).getTime()
+    : run?.durationMs;
 
   return (
     <main>
@@ -74,7 +98,11 @@ function App() {
         <span className={`dot ${appState.codex.detected ? "good" : "bad"}`} />
         <div>
           <strong>Codex CLI {appState.codex.detected ? "detected" : "not detected"}</strong>
-          <small>{appState.codex.version || "Install Codex CLI, then check again."}</small>
+          <small>
+            {appState.codex.detected
+              ? `${appState.codex.version} · ${appState.codex.path}`
+              : appState.codex.error || "Install Codex CLI, then check again."}
+          </small>
         </div>
         <button className="quiet" onClick={() => act(window.yPrompter.detectCodex)}>Check</button>
       </section>
@@ -123,6 +151,9 @@ function App() {
 
       <aside>
         Scheduled runs are unattended. Keep yPrompter open in the tray and keep the computer awake.
+        {form.approval === "on-request" && (
+          <strong>on-request can block unattended runs. Use never for overnight jobs.</strong>
+        )}
       </aside>
 
       {error && <div className="error">{error}</div>}
@@ -141,6 +172,37 @@ function App() {
           Open Last Log
         </button>
       </div>
+
+      <section className={`run-status run-status-${run?.status || "idle"}`}>
+        <div className="run-status-heading">
+          <strong>{appState.running ? "Codex CLI is running..." : "Run status"}</strong>
+          {elapsedMs != null && <span>{formatDuration(elapsedMs)}</span>}
+        </div>
+        <p>yPrompter runs Codex CLI with <code>codex exec</code>. Runs do not appear inside the Codex desktop app.</p>
+        {run && (
+          <dl>
+            <div><dt>Status</dt><dd>{run.status === "succeeded" ? "Success" : run.status}</dd></div>
+            {run.exitCode != null && <div><dt>Exit code</dt><dd>{run.exitCode}</dd></div>}
+            {run.signal && <div><dt>Signal</dt><dd>{run.signal}</dd></div>}
+            {run.repository && <div><dt>Repository</dt><dd>{run.repository}</dd></div>}
+            {run.codexPath && <div><dt>Codex</dt><dd>{run.codexPath}</dd></div>}
+            {run.logPath && <div><dt>Log</dt><dd>{run.logPath}</dd></div>}
+          </dl>
+        )}
+        {appState.running && (
+          <>
+            <div className="live-log-actions">
+              <button className="danger" onClick={() => act(window.yPrompter.cancelRunning)}>Cancel Running Job</button>
+              <button className="secondary" onClick={() => act(window.yPrompter.openLastLog)}>Open Live Log</button>
+              <button className="secondary" onClick={() => act(async () => {
+                const preview = await window.yPrompter.getLogPreview();
+                setLogPreview(preview.content);
+              })}>Refresh Log Preview</button>
+            </div>
+            <pre className="log-preview">{logPreview || "Waiting for Codex output…"}</pre>
+          </>
+        )}
+      </section>
 
       <footer>
         <div><span>Last run</span><strong className={`run-${appState.lastRun?.status || "none"}`}>{appState.lastRun?.message || "No runs yet"}</strong></div>

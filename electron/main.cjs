@@ -11,6 +11,7 @@ let tray;
 let scheduleTimer;
 let quitting = false;
 let running = false;
+let activeChild = null;
 
 const defaults = {
   settings: {
@@ -21,7 +22,7 @@ const defaults = {
     sandbox: "workspace-write",
     approval: "never"
   },
-  codex: { detected: false, path: "", version: "", checked: false },
+  codex: { detected: false, path: "", version: "", checked: false, error: "" },
   scheduledRun: null,
   lastRun: null,
   lastLogPath: ""
@@ -53,6 +54,20 @@ function loadState() {
   if (state.scheduledRun && new Date(state.scheduledRun.runAt).getTime() <= Date.now()) {
     state.lastRun = { status: "missed", message: "Scheduled time passed while yPrompter was closed." };
     state.scheduledRun = null;
+    persistState();
+  }
+
+  if (state.lastRun?.status === "running") {
+    const finishedAt = new Date();
+    const startedAt = new Date(state.lastRun.startedAt || finishedAt);
+    state.lastRun = {
+      ...state.lastRun,
+      status: "failed",
+      message: "Run status was lost because yPrompter closed.",
+      exitCode: null,
+      finishedAt: finishedAt.toISOString(),
+      durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime())
+    };
     persistState();
   }
 }
@@ -133,9 +148,29 @@ function createTray() {
   tray.on("click", showWindow);
 }
 
-function findCommand(command, args = []) {
+function buildAugmentedEnv() {
+  const env = { ...process.env };
+  if (process.platform !== "darwin") return env;
+
+  const home = app.getPath("home");
+  const requiredPaths = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+    path.join(home, ".local", "bin"),
+    path.join(home, ".npm-global", "bin")
+  ];
+  const inheritedPaths = (env.PATH || "").split(path.delimiter).filter(Boolean);
+  env.PATH = [...new Set([...requiredPaths, ...inheritedPaths])].join(path.delimiter);
+  return env;
+}
+
+function findCommand(command, args = [], env = buildAugmentedEnv()) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true, shell: false });
+    const child = spawn(command, args, { env, windowsHide: true, shell: false });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -146,15 +181,21 @@ function findCommand(command, args = []) {
 }
 
 async function detectCodex() {
-  const locator = process.platform === "win32" ? "where" : "which";
-  const located = await findCommand(locator, ["codex"]);
-  const version = await findCommand("codex", ["--version"]);
-  const detected = located.ok && version.ok;
+  const env = buildAugmentedEnv();
+  const locator = process.platform === "win32" ? "where.exe" : "/usr/bin/which";
+  const located = await findCommand(locator, ["codex"], env);
+  const resolvedPath = located.ok ? located.output.split(/\r?\n/).find(Boolean)?.trim() || "" : "";
+  const version = resolvedPath
+    ? await findCommand(resolvedPath, ["--version"], env)
+    : { ok: false, output: "" };
+  const detected = Boolean(resolvedPath && version.ok);
+  const lookupHint = process.platform === "win32" ? "where codex" : "which codex";
   state.codex = {
     checked: true,
     detected,
-    path: located.ok ? located.output.split(/\r?\n/)[0] : "",
-    version: version.ok ? version.output.split(/\r?\n/)[0] : ""
+    path: detected ? resolvedPath : "",
+    version: detected ? version.output.split(/\r?\n/)[0] : "",
+    error: detected ? "" : `Codex CLI was not found. Open a terminal and run: ${lookupHint}`
   };
   saveAndBroadcast();
   return state.codex;
@@ -184,15 +225,28 @@ function timestamp() {
 async function execute(request, source) {
   validateRequest(request);
   if (running) throw new Error("A prompt is already running.");
+  const codexPath = state.codex.detected ? state.codex.path : "";
+  if (!codexPath) {
+    const lookupHint = process.platform === "win32" ? "where codex" : "which codex";
+    throw new Error(`Codex CLI is not detected. Open a terminal and run: ${lookupHint}`);
+  }
   running = true;
   state.settings = { ...request };
-  state.lastRun = { status: "running", source, startedAt: new Date().toISOString(), message: "Codex is running…" };
+  state.lastRun = {
+    status: "running",
+    source,
+    startedAt: new Date().toISOString(),
+    repository: request.repository,
+    codexPath,
+    message: "Codex CLI is running..."
+  };
   saveAndBroadcast();
 
   fs.mkdirSync(logsDirectory(), { recursive: true });
   const logPath = path.join(logsDirectory(), `${timestamp()}.log`);
   state.lastLogPath = logPath;
-  persistState();
+  state.lastRun.logPath = logPath;
+  saveAndBroadcast();
 
   const fullPrompt = `${modePrefixes[request.mode]}\n\n${request.prompt.trim()}`;
   const args = [
@@ -200,7 +254,7 @@ async function execute(request, source) {
     "--sandbox", request.sandbox,
     "--ask-for-approval", request.approval,
     "exec",
-    fullPrompt
+    "-"
   ];
   const header = [
     `yPrompter run: ${new Date().toLocaleString()}`,
@@ -215,30 +269,74 @@ async function execute(request, source) {
   fs.writeFileSync(logPath, header);
 
   return new Promise((resolve) => {
-    const child = spawn("codex", args, { cwd: request.repository, windowsHide: true, shell: false });
+    const child = spawn(codexPath, args, {
+      cwd: request.repository,
+      env: buildAugmentedEnv(),
+      windowsHide: true,
+      shell: false
+    });
+    activeChild = child;
     child.stdout.on("data", (chunk) => fs.appendFileSync(logPath, chunk));
     child.stderr.on("data", (chunk) => fs.appendFileSync(logPath, chunk));
     child.on("error", (error) => {
       fs.appendFileSync(logPath, `\nFailed to start Codex: ${error.message}\n`);
-      finishRun("failed", error.message);
+      appendRunEnd(logPath, null, null);
+      finishRun("failed", error.message, null, null);
       resolve(publicState());
     });
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (!running) return;
-      fs.appendFileSync(logPath, `\n---- exit code: ${code} ----\n`);
-      finishRun(code === 0 ? "succeeded" : "failed", code === 0 ? "Codex completed successfully." : `Codex exited with code ${code}.`);
+      appendRunEnd(logPath, code, signal);
+      const cancelled = signal != null;
+      finishRun(
+        code === 0 && !cancelled ? "succeeded" : "failed",
+        cancelled
+          ? `Codex was cancelled with signal ${signal}.`
+          : code === 0 ? "Codex completed successfully." : `Codex exited with code ${code}.`,
+        code,
+        signal
+      );
       resolve(publicState());
     });
+
+    child.stdin.on("error", (error) => {
+      fs.appendFileSync(logPath, `\nstdin error: ${error.message}\n`);
+    });
+    child.stdin.write(fullPrompt);
+    fs.appendFileSync(logPath, `Prompt written to stdin (${Buffer.byteLength(fullPrompt)} bytes).\n`);
+    child.stdin.end();
+    fs.appendFileSync(logPath, "stdin closed; Codex received EOF.\n\n");
   });
 }
 
-function finishRun(status, message) {
+function appendRunEnd(logPath, exitCode, signal) {
+  const endedAt = new Date();
+  const startedAt = new Date(state.lastRun?.startedAt || endedAt);
+  const durationMs = Math.max(0, endedAt.getTime() - startedAt.getTime());
+  fs.appendFileSync(logPath, [
+    "",
+    "---- run ended ----",
+    `End time: ${endedAt.toISOString()}`,
+    `Duration: ${durationMs} ms`,
+    `Exit code: ${exitCode == null ? "none" : exitCode}`,
+    `Signal: ${signal || "none"}`,
+    ""
+  ].join("\n"));
+}
+
+function finishRun(status, message, exitCode, signal) {
   running = false;
+  activeChild = null;
+  const finishedAt = new Date();
+  const startedAt = new Date(state.lastRun?.startedAt || finishedAt);
   state.lastRun = {
     ...state.lastRun,
     status,
     message,
-    finishedAt: new Date().toISOString(),
+    exitCode,
+    signal,
+    finishedAt: finishedAt.toISOString(),
+    durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
     logPath: state.lastLogPath
   };
   saveAndBroadcast();
@@ -281,6 +379,15 @@ ipcMain.handle("run:now", async (_event, request) => {
   });
   return publicState();
 });
+ipcMain.handle("run:cancel", () => {
+  if (!running || !activeChild) throw new Error("No Codex job is currently running.");
+  if (state.lastLogPath && fs.existsSync(state.lastLogPath)) {
+    fs.appendFileSync(state.lastLogPath, `\nCancellation requested at ${new Date().toISOString()}.\n`);
+  }
+  const signalled = activeChild.kill("SIGTERM");
+  if (!signalled) throw new Error("Could not send the cancellation signal to Codex.");
+  return publicState();
+});
 ipcMain.handle("schedule:set", (_event, request) => {
   validateRequest(request, true);
   state.settings = { ...request };
@@ -301,13 +408,32 @@ ipcMain.handle("log:open-last", async () => {
   if (error) throw new Error(error);
   return true;
 });
+ipcMain.handle("log:preview", () => {
+  const logPath = state.lastRun?.logPath || state.lastLogPath;
+  if (!logPath || !fs.existsSync(logPath)) return { path: logPath || "", content: "" };
+  const size = fs.statSync(logPath).size;
+  const maxBytes = 16 * 1024;
+  const start = Math.max(0, size - maxBytes);
+  const length = size - start;
+  const buffer = Buffer.alloc(length);
+  const descriptor = fs.openSync(logPath, "r");
+  try {
+    fs.readSync(descriptor, buffer, 0, length, start);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return {
+    path: logPath,
+    content: `${start > 0 ? "… showing the latest 16 KB …\n" : ""}${buffer.toString("utf8")}`
+  };
+});
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   loadState();
   createWindow();
   createTray();
+  await detectCodex();
   armScheduler();
-  detectCodex();
 });
 
 app.on("activate", showWindow);
