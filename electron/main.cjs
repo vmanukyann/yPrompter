@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, clipboard, dialog, ipcMain, nativeImage, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -237,6 +237,7 @@ async function execute(request, source) {
     source,
     startedAt: new Date().toISOString(),
     repository: request.repository,
+    mode: request.mode,
     codexPath,
     message: "Codex CLI is running..."
   };
@@ -361,6 +362,10 @@ function armScheduler() {
 }
 
 ipcMain.handle("state:get", () => publicState());
+ipcMain.handle("clipboard:write", (_event, text) => {
+  clipboard.writeText(String(text || ""));
+  return true;
+});
 ipcMain.handle("settings:save", (_event, settings) => {
   state.settings = { ...defaults.settings, ...settings };
   persistState();

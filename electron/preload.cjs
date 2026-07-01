@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("yPrompter", {
   getState: () => ipcRenderer.invoke("state:get"),
+  copyText: (text) => ipcRenderer.invoke("clipboard:write", text),
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),
   detectCodex: () => ipcRenderer.invoke("codex:detect"),
   chooseRepository: () => ipcRenderer.invoke("repo:choose"),
