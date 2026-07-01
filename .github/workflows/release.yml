@@ -5,6 +5,11 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to build (for example, v0.1.4)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -22,22 +27,12 @@ jobs:
             artifact_name: yPrompter-macOS
             artifact_paths: |
               release/*.dmg
-              release/*.zip
-              release/*.dmg.blockmap
-              release/*.zip.blockmap
-              release/latest-mac.yml
           - name: Windows
             os: windows-latest
             package_script: package:win
             artifact_name: yPrompter-Windows
             artifact_paths: |
-              release/*.exe
-              release/*.msi
-              release/*.zip
-              release/*.exe.blockmap
-              release/*.msi.blockmap
-              release/*.zip.blockmap
-              release/latest.yml
+              release/yPrompter-Windows-v*.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -51,6 +46,42 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Resolve tag version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="${{ inputs.version }}"
+          fi
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Expected a version tag such as v0.1.4, got: $TAG" >&2
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Apply tag version to npm manifests
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Verify manifest versions
+        shell: bash
+        run: |
+          node -e '
+            const packageJson = require("./package.json");
+            const lock = require("./package-lock.json");
+            const expected = process.env.PACKAGE_VERSION;
+            const versions = [packageJson.version, lock.version, lock.packages?.[""]?.version];
+            if (versions.some((version) => version !== expected)) {
+              throw new Error(`Manifest version mismatch: expected ${expected}, got ${versions.join(", ")}`);
+            }
+          '
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+
       - name: Install dependencies
         run: npm ci
 
@@ -62,10 +93,38 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
+      - name: Verify packaged file versions
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const expected = process.env.PACKAGE_VERSION;
+            const files = fs.readdirSync("release").filter((file) => /\.(dmg|exe)$/i.test(file));
+            if (!files.length) throw new Error("No packaged DMG or EXE files were found in release/");
+            const mismatches = files.filter((file) => !file.includes(expected));
+            if (mismatches.length) {
+              throw new Error(`Packaged filenames do not match ${expected}: ${mismatches.join(", ")}`);
+            }
+            console.log(`Verified ${files.length} package file(s) at version ${expected}.`);
+          '
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Bundle Windows executables
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $executables = Get-ChildItem -Path release -File -Filter *.exe
+          if ($executables.Count -lt 2) {
+            throw "Expected the setup and portable EXE files in release/."
+          }
+          $destination = "release/yPrompter-Windows-${{ steps.version.outputs.tag }}.zip"
+          Compress-Archive -Path $executables.FullName -DestinationPath $destination -Force
+
       - name: Upload ${{ matrix.name }} artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-${{ github.ref_name }}
+          name: ${{ matrix.artifact_name }}-${{ steps.version.outputs.tag }}
           path: ${{ matrix.artifact_paths }}
           if-no-files-found: error
           retention-days: 30

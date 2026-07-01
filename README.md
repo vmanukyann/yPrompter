@@ -74,16 +74,20 @@ Artifacts are written to `release/`. macOS builds use a DMG target; Windows buil
 
 ### GitHub Actions beta builds
 
-Pushing a version tag that matches `v*.*.*` (for example, `v0.1.1`) starts the **Build beta artifacts** workflow. It builds on both `macos-latest` and `windows-latest`. You can also run it manually from **Actions → Build beta artifacts → Run workflow**.
+Version tags are the source of truth for CI packages. Pushing a tag that matches `v*.*.*` makes the workflow strip the leading `v`, apply that version to `package.json` and `package-lock.json` on the runner, and then build on `macos-latest` and `windows-latest`. For example, `v0.1.4` produces app packages at version `0.1.4`.
 
-After both jobs finish, open the workflow run in GitHub and download `yPrompter-macOS-<tag>` and `yPrompter-Windows-<tag>` from its **Artifacts** section. GitHub downloads each workflow artifact as a ZIP. The macOS ZIP contains the DMG, and the Windows ZIP contains the NSIS installer and portable EXE. Workflow artifacts are retained for 30 days.
+The workflow does not publish a GitHub Release and does not require `GH_TOKEN`. Electron-builder publishing remains disabled. Actions uploads a macOS artifact containing only the DMG and a Windows artifact containing a ZIP with the setup and portable EXE files. Workflow artifacts are retained for 30 days.
 
-To publish the files with a GitHub Release:
+To create a clean beta release:
 
-1. Download and unzip both workflow artifacts.
-2. Open the repository's **Releases** page and create a new release for the same tag, or edit an existing release for that tag.
-3. Drag the DMG and both Windows EXE files into the release's binary attachment area.
-4. Mark the release as a pre-release while yPrompter remains in beta, then publish it.
+1. Commit and push all release changes.
+2. Create a version tag, for example: `git tag v0.1.4`.
+3. Push the tag: `git push origin v0.1.4`.
+4. Open the resulting **Build beta artifacts** run in GitHub Actions and download `yPrompter-macOS-v0.1.4` and `yPrompter-Windows-v0.1.4`.
+5. Create a GitHub Release for `v0.1.4`, then upload the macOS DMG and the Windows ZIP or its EXE files.
+6. Do not upload `.blockmap` or `latest.yml` files for manual beta releases.
+
+The GitHub Release version, git tag, and packaged app version must match. For example, release `v0.1.4` should use tag `v0.1.4` and contain packages built as app version `0.1.4`.
 
 These CI packages are unsigned beta builds and are not notarized. macOS Gatekeeper may block or warn about the DMG, and Windows SmartScreen may warn about either EXE.
 
