@@ -22,7 +22,9 @@ jobs:
             artifact_name: yPrompter-macOS
             artifact_paths: |
               release/*.dmg
+              release/*.zip
               release/*.dmg.blockmap
+              release/*.zip.blockmap
               release/latest-mac.yml
           - name: Windows
             os: windows-latest
@@ -30,7 +32,11 @@ jobs:
             artifact_name: yPrompter-Windows
             artifact_paths: |
               release/*.exe
+              release/*.msi
+              release/*.zip
               release/*.exe.blockmap
+              release/*.msi.blockmap
+              release/*.zip.blockmap
               release/latest.yml
 
     runs-on: ${{ matrix.os }}
